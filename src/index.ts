@@ -1,8 +1,6 @@
-import crypto from 'crypto'
 import esbuild from 'esbuild'
 import fs from 'fs'
 import path from 'path'
-import { JSDOM } from 'jsdom'
 import lodashTemplate from 'lodash.template'
 
 export interface Configuration {
@@ -170,21 +168,8 @@ export const htmlPlugin = (configuration: Configuration = { files: [], }): esbui
         return `${publicPath}${slash}${relPath}`
     }
 
-    async function injectFiles(dom: JSDOM, assets: { path: string }[], outDir: string, publicPath: string | undefined, htmlFileConfiguration: HtmlFileConfiguration) {
-        const document = dom.window.document
-        for (const script of htmlFileConfiguration?.extraScripts || []) {
-            const scriptTag = document.createElement('script')
-            if (typeof script === 'string') {
-                scriptTag.setAttribute('src', script)
-            } else {
-                scriptTag.setAttribute('src', script.src)
-                Object.entries(script.attrs || {}).forEach(([key, value]) => {
-                    scriptTag.setAttribute(key, value)
-                })
-            }
-            document.body.append(scriptTag)
-        }
-        for (const outputFile of assets) {
+    function injectFilesToHtmlTemplate(htmlTemplate: string, assets: { path: string }[], outDir: string, publicPath: string | undefined, htmlFileConfiguration: HtmlFileConfiguration) {
+        const elementsStringToInject = assets.map(outputFile => {
             const filepath = outputFile.path
 
             let targetPath: string
@@ -194,78 +179,29 @@ export const htmlPlugin = (configuration: Configuration = { files: [], }): esbui
                 const htmlFileDirectory = posixJoin(outDir, htmlFileConfiguration.filename)
                 targetPath = path.relative(path.dirname(htmlFileDirectory), filepath)
             }
-            if (htmlFileConfiguration.hash) {
-                const hashableContents = htmlFileConfiguration.hash === true ? `${Date.now()}` : htmlFileConfiguration.hash
-                targetPath = `${targetPath}?${crypto.createHash('md5').update(hashableContents).digest('hex')}`
-            }
+
             const ext = path.parse(filepath).ext
 
-            // Inline the JavaScript and CSS files if the option is set.
-            const { inline } = htmlFileConfiguration
-
-            const isInline = () => {
-                if (!inline) {
-                    return false
-                }
-                const extension = ext.replace('.', '') as 'css' | 'js'
-                return (
-                    (typeof inline === 'boolean' && inline === true) ||
-                    (typeof inline === 'object' && inline[extension] === true)
-                )
-            }
-
+            let scriptElement = "";
+            let linkCssElement = "";
             if (ext === '.js') {
-                const scriptTag = document.createElement('script')
-                // Check if the JavaScript should be inlined.
-                if (isInline()) {
-                    logInfo && console.log('Inlining script', filepath)
-                    // Read the content of the JavaScript file, then append to the script tag
-                    const scriptContent = await fs.promises.readFile(
-                        filepath,
-                        'utf-8'
-                    )
-                    scriptTag.textContent = scriptContent
-                    document.body.append(scriptTag)
-
-                    // no need to set any attributes
-                    continue
-                }
-
-                // If not inlined, set the 'src' attribute as usual.
-                scriptTag.setAttribute('src', targetPath)
-
                 if (htmlFileConfiguration.scriptLoading === 'module') {
                     // If module, add type="module"
-                    scriptTag.setAttribute('type', 'module')
+                    scriptElement = `<script src="${targetPath}" type="module"></script>`
                 } else if (!htmlFileConfiguration.scriptLoading || htmlFileConfiguration.scriptLoading === 'defer') {
                     // if scriptLoading is unset, or defer, use defer
-                    scriptTag.setAttribute('defer', '')
+                    scriptElement = `<script src="${targetPath}" defer></script>`
                 }
-
-                document.body.append(scriptTag)
             } else if (ext === '.css') {
-                // Check if the CSS should be inlined -> if so, use style tags instead of link tags.
-                if (isInline()) {
-                    const styleTag = document.createElement('style')
-                    const styleContent = await fs.promises.readFile(
-                        filepath,
-                        'utf-8'
-                    )
-                    styleTag.textContent = styleContent
-                    document.head.append(styleTag)
-
-                    // no need to set any attributes
-                    continue
-                }
-
-                const linkTag = document.createElement('link')
-                linkTag.setAttribute('rel', 'stylesheet')
-                linkTag.setAttribute('href', targetPath)
-                document.head.appendChild(linkTag)
+                linkCssElement = `<link rel="stylesheet" href="${targetPath}">`
             } else {
                 logInfo && console.log(`Warning: found file ${targetPath}, but it was neither .js nor .css`)
             }
-        }
+
+            return [scriptElement, linkCssElement]
+        }).flat().join("")
+
+        return htmlTemplate.replace("</title>", ("</title>" + elementsStringToInject))
     }
 
     return {
@@ -319,39 +255,15 @@ export const htmlPlugin = (configuration: Configuration = { files: [], }): esbui
 
                     const publicPath = build.initialOptions.publicPath
 
-                    const templatingResult = await renderTemplate(htmlFileConfiguration)
+                    const htmlTemplate = await renderTemplate(htmlFileConfiguration)
 
-                    // Next, we insert the found files into the htmlTemplate - if no htmlTemplate was specified, we default to a basic one.
-                    const dom = new JSDOM(templatingResult)
-                    const document = dom.window.document
-
-                    if (htmlFileConfiguration.title) {
-                        // If a title was given, we pass the title as well
-                        document.title = htmlFileConfiguration.title
-                    }
-
-                    if (htmlFileConfiguration.favicon) {
-                        // Injects a favicon if present
-                        await fs.promises.copyFile(htmlFileConfiguration.favicon, `${outdir}/favicon.ico`)
-
-                        const linkTag = document.createElement('link')
-                        linkTag.setAttribute('rel', 'icon')
-
-                        let faviconPublicPath = '/favicon.ico'
-                        if (publicPath) {
-                            faviconPublicPath = joinWithPublicPath(publicPath, 'favicon.ico')
-                        }
-                        linkTag.setAttribute('href', faviconPublicPath)
-                        document.head.appendChild(linkTag)
-                    }
-
-                    await injectFiles(dom, collectedOutputFiles, outdir, publicPath, htmlFileConfiguration)
+                    const modifiedHtmlTemplate = injectFilesToHtmlTemplate(htmlTemplate, collectedOutputFiles, outdir, publicPath, htmlFileConfiguration)
 
                     const out = posixJoin(outdir, htmlFileConfiguration.filename)
                     await fs.promises.mkdir(path.dirname(out), {
                         recursive: true,
                     })
-                    await fs.promises.writeFile(out, dom.serialize())
+                    await fs.promises.writeFile(out, modifiedHtmlTemplate)
                     const stat = await fs.promises.stat(out)
                     logInfo && console.log(`  ${out} - ${stat.size}`)
                 }
