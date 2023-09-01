@@ -32,8 +32,5 @@
   "engines": {
     "node": ">13"
   },
-  "dependencies": {
-    "jsdom": "^17.0.0",
-    "lodash.template": "^4.5.0"
-  }
+  "dependencies": {}
 }
