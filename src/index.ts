@@ -1,7 +1,6 @@
 import esbuild from 'esbuild'
 import fs from 'fs'
 import path from 'path'
-import lodashTemplate from 'lodash.template'
 
 export interface Configuration {
     files: HtmlFileConfiguration[],
@@ -16,8 +15,6 @@ export interface HtmlFileConfiguration {
     title?: string,
     /** @param htmlTemplate A path to a custom HTML template to use. If not set, a default template will be used. */
     htmlTemplate?: string,
-    /** @param define A map of variables that will be available in the HTML file. */
-    define?: Record<string, string>,
     /** @param scriptLoading How to load the generated script tags: blocking, defer, or module. Defaults to defer. */
     scriptLoading?: 'blocking' | 'defer' | 'module',
     /** @param favicon A path to a favicon to use. */
@@ -137,19 +134,14 @@ export const htmlPlugin = (configuration: Configuration = { files: [], }): esbui
         }
     }
 
-    async function renderTemplate({ htmlTemplate, define }: HtmlFileConfiguration) {
+    async function renderTemplate({ htmlTemplate }: HtmlFileConfiguration) {
         const customHtmlTemplate = (htmlTemplate && fs.existsSync(htmlTemplate)
             ? await fs.promises.readFile(htmlTemplate)
             : htmlTemplate || '').toString()
 
         const template = customHtmlTemplate || defaultHtmlTemplate
 
-        if (define === undefined) {
-            return template
-        } else {
-            const compiledTemplateFn = lodashTemplate(template)
-            return compiledTemplateFn({ define })
-        }
+        return template
     }
 
     // use the same joinWithPublicPath function as esbuild:
