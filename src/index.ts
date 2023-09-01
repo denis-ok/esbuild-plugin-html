@@ -17,24 +17,12 @@ export interface HtmlFileConfiguration {
     htmlTemplate?: string,
     /** @param scriptLoading How to load the generated script tags: blocking, defer, or module. Defaults to defer. */
     scriptLoading?: 'blocking' | 'defer' | 'module',
-    /** @param favicon A path to a favicon to use. */
-    favicon?: string,
     /** @param findRelatedCssFiles Whether to find CSS files that are related to the entry points. */
     findRelatedCssFiles?: boolean,
     /**
      * @deprecated Use findRelatedCssFiles instead.
      * @param findRelatedOutputFiles Whether to find output files that are related to the entry points. */
     findRelatedOutputFiles?: boolean,
-    /** @param inline Whether to inline the content of the js and css files. */
-    inline?: boolean | {
-        css?: boolean
-        js?: boolean
-    }
-    /** @param extraScripts Extra script tags to include in the HTML file. */
-    extraScripts?: (string | {
-        src: string,
-        attrs?: { [key: string]: string }
-    })[],
     hash?: boolean | string,
 }
 
